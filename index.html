@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LoRA サンプリング設定＆最適化ガイド</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+    <div class="max-w-6xl mx-auto px-4 py-8">
+        <!-- ヘッダー -->
+        <header class="text-center mb-10">
+            <h1 class="text-3xl md:text-4xl font-extrabold bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-3">
+                LoRA サンプリング設定＆最適化ガイド
+            </h1>
+            <p class="text-slate-400 text-sm md:text-base">
+                お持ちのLoRA一覧と、スライダーで調整したリアルタイムの数値がプロンプトに反映されるインタラクティブツールです。
+            </p>
+        </header>
+
+        <!-- メインコンテンツグリッド -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- 左側：LoRAリストとスライダー操作パネル -->
+            <div class="lg:col-span-1 bg-slate-900/80 backdrop-blur border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
+                <div>
+                    <h2 class="text-xl font-bold mb-4 flex items-center gap-2 text-indigo-300">
+                        <span>🎛️</span> LoRA選択 ＆ スライダー
+                    </h2>
+                    <div class="mb-4">
+                        <label for="loraSelect" class="block text-xs uppercase tracking-wider text-slate-400 mb-2">LoRAモデルを選択</label>
+                        <select id="loraSelect" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition">
+                            <!-- JSで挿入 -->
+                        </select>
+                    </div>
+
+                    <!-- スライダー操作 -->
+                    <div class="bg-slate-800/50 rounded-xl p-4 border border-slate-700/60 mb-6">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-sm font-medium text-slate-300">適用強さ (Weight)</span>
+                            <span id="weightValue" class="text-lg font-bold text-indigo-400 bg-indigo-950/60 px-3 py-1 rounded-lg border border-indigo-800/50">0.80</span>
+                        </div>
+                        <input type="range" id="weightSlider" min="0.0" max="1.5" step="0.05" value="0.80" 
+                            class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                        <div class="flex justify-between text-xs text-slate-500 mt-2">
+                            <span>0.0 (無効)</span>
+                            <span>0.7 ~ 0.9 (標準)</span>
+                            <span>1.5 (最大)</span>
+                        </div>
+                    </div>
+
+                    <!-- リアルタイム生成プロンプト表示 -->
+                    <div class="bg-slate-950 border border-indigo-500/30 rounded-xl p-4 mb-6">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="text-xs text-indigo-300 font-semibold tracking-wider uppercase">反映中のプロンプトタグ</span>
+                            <button onclick="copyCurrentPrompt()" class="text-[11px] bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-0.5 rounded transition">タグをコピー</button>
+                        </div>
+                        <code id="currentPromptSyntax" class="text-xs text-slate-200 break-all select-all block mt-1 font-mono">&lt;lora:aamAnyloraAnimeMixAnime_v1:0.80&gt;</code>
+                    </div>
+
+                    <!-- リアルタイム推奨ステータス -->
+                    <div id="statusBox" class="p-4 rounded-xl border transition-all duration-300 bg-indigo-950/30 border-indigo-800/40">
+                        <h3 id="statusTitle" class="font-bold text-indigo-300 mb-1">適正範囲内です</h3>
+                        <p id="statusDesc" class="text-xs text-slate-300 leading-relaxed">バランス良く効果が発揮される設定です。</p>
+                    </div>
+                </div>
+
+                <div class="mt-6 pt-4 border-t border-slate-800 text-xs text-slate-500 text-center">
+                    💡 カードをクリックするとそのLoRAが選択され、スライダーで詳細な強さを調整できます
+                </div>
+            </div>
+
+            <!-- 右側：お持ちのLoRA一覧カードグリッド & 詳細解説 -->
+            <div class="lg:col-span-2 space-y-6">
+                <!-- 検索バー -->
+                <div class="relative">
+                    <input type="text" id="searchInput" placeholder="LoRA名で検索..." class="w-full bg-slate-900/80 border border-slate-800 rounded-xl px-4 py-3 pl-10 text-sm focus:outline-none focus:border-indigo-500 transition">
+                    <svg class="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                </div>
+
+                <!-- カード一覧コンテナ -->
+                <div id="loraCardsGrid" class="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[600px] overflow-y-auto pr-1">
+                    <!-- JSでカードを動的生成 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- コピー通知トースト -->
+        <div id="toast" class="fixed bottom-6 right-6 bg-emerald-600 text-white px-4 py-2 rounded-xl shadow-lg transform translate-y-20 opacity-0 transition-all duration-300 text-sm font-medium z-50">
+            クリップボードにコピーしました！
+        </div>
+    </div>
+
+    <script>
+        // お持ちのLoRAデータベース（推奨数値、タイプ、解説付き）
+        const loraData = [
+            {
+                id: "aamAnyloraAnimeMixAnime_v1",
+                name: "aamAnyloraAnimeMixAnime_v1",
+                category: "CheckPoint/Mix",
+                recommended: 1.0,
+                range: [0.6, 1.0],
+                desc: "高品質なアニメ調イラストを生成するベースモデル、あるいは重めのLoRA。イラスト全体の一貫性を高めます。"
+            },
+            {
+                id: "add_detail",
+                name: "add_detail",
+                category: "ディテール向上",
+                recommended: 0.6,
+                range: [0.3, 0.8],
+                desc: "画面全体のディテールや質感を細かく描き込みます。高すぎるとノイズや破綻の原因になるので0.5~0.7がおすすめ。"
+            },
+            {
+                id: "alice-lora-v3-32dim-20ep",
+                name: "alice-lora-v3-32dim-20ep",
+                category: "キャラクター",
+                recommended: 0.8,
+                range: [0.6, 1.0],
+                desc: "特定キャラクター（アリス風）の再現用LoRA。32dim/20epochで学習されており再現度が高めです。"
+            },
+            {
+                id: "animetarotV51",
+                name: "animetarotV51",
+                category: "スタイル・特殊",
+                recommended: 0.8,
+                range: [0.5, 1.0],
+                desc: "タロットカード風のアニメ調アートスタイルを付与します。神秘的で装飾的な構図に強み。"
+            },
+            {
+                id: "edgBondDollLikenessv1",
+                name: "edgBondDollLikenessv1",
+                category: "スタイル・質感",
+                recommended: 0.7,
+                range: [0.5, 0.9],
+                desc: "ドール（球体関節人形など）のような滑らかなツヤ感や独特の質感を表現するLoRA。"
+            },
+            {
+                id: "fashigirl-v7-lokr-7ep",
+                name: "fashigirl-v7-lokr-7ep",
+                category: "LoKR（スタイル）",
+                recommended: 0.8,
+                range: [0.5, 1.0],
+                desc: "LoKR（LoRA-Key-Recovery）形式のファッション・ガール系スタイル。重すぎず自然なバランスが◎。"
+            },
+            {
+                id: "FilmVelvia3",
+                name: "FilmVelvia3",
+                category: "写真・色調",
+                recommended: 0.6,
+                range: [0.4, 0.9],
+                desc: "名門リバーサルフィルム「Velvia」の色合いを再現。鮮やかでコントラストの効いたシネマティックな色彩に。"
+            },
+            {
+                id: "FluxDFaeTasticDetails",
+                name: "FluxDFaeTasticDetails",
+                category: "Flux系ディテール",
+                recommended: 0.7,
+                range: [0.4, 1.0],
+                desc: "Fluxモデル向けのディテール・質感向上用LoRA。微細な描写力を底上げします。"
+            },
+            {
+                id: "GachaSplash4",
+                name: "GachaSplash4",
+                category: "イラストスタイル",
+                recommended: 0.8,
+                range: [0.6, 1.0],
+                desc: "ガチャのSSRイラストのような、華やかで豪華な背景・エフェクト付きイラストスタイル。"
+            },
+            {
+                id: "GoodHands-beta2",
+                name: "GoodHands-beta2",
+                category: "ポーズ・手足補正",
+                recommended: 0.9,
+                range: [0.7, 1.1],
+                desc: "崩れやすい「手」の描写をきれいに補正するための定番お助けLoRA。高めに設定しても安定しやすいです。"
+            },
+            {
+                id: "hinaFluxAsianMixLora-schnell_v3-rev9",
+                name: "hinaFluxAsianMixLora-schnell_v3-rev9",
+                category: "Flux系アジア人ミックス",
+                recommended: 0.8,
+                range: [0.6, 1.0],
+                desc: "Flux Schnell向けの、アジア系ルックスやニュアンスを美しく調和させるLoRAモデル。"
+            },
+            {
+                id: "japanesepopartstyle",
+                name: "japanesepopartstyle",
+                category: "アートスタイル",
+                recommended: 0.8,
+                range: [0.5, 1.0],
+                desc: "ポップでモダンな日本のポップアート調イラストスタイルに変化させます。"
+            },
+            {
+                id: "jpcosermix-000008",
+                name: "jpcosermix-000008",
+                category: "人物・コスプレ",
+                recommended: 0.75,
+                range: [0.5, 1.0],
+                desc: "日本のコスプレカルチャーに特化したリアル/アニメ調のミックスLoRA。質感や衣装の再現に。"
+            },
+            {
+                id: "mix4",
+                name: "mix4",
+                category: "汎用ミックス",
+                recommended: 0.7,
+                range: [0.4, 1.0],
+                desc: "多様なニュアンスをミックスした汎用LoRA。ニュアンスの微調整に便利です。"
+            },
+            {
+                id: "RealisticAnimeFlux_v1",
+                name: "RealisticAnimeFlux_v1",
+                category: "Flux系リアルアニメ",
+                recommended: 0.8,
+                range: [0.6, 1.0],
+                desc: "Fluxベースで、リアルさとアニメ調が絶妙に融合したハイクオリティ表現を狙うLoRA。"
+            },
+            {
+                id: "DDTMikamiYua-1340",
+                name: "DDTMikamiYua-1340",
+                category: "人物・タレント",
+                recommended: 0.75,
+                range: [0.6, 0.9],
+                desc: "特定タレント・人物風の顔立ちや雰囲気を再現する学習LoRA。0.7~0.8が最も破綻しにくいスイートスポットです。"
+            }
+        ];
+
+        const loraSelect = document.getElementById('loraSelect');
+        const weightSlider = document.getElementById('weightSlider');
+        const weightValue = document.getElementById('weightValue');
+        const statusBox = document.getElementById('statusBox');
+        const statusTitle = document.getElementById('statusTitle');
+        const statusDesc = document.getElementById('statusDesc');
+        const loraCardsGrid = document.getElementById('loraCardsGrid');
+        const searchInput = document.getElementById('searchInput');
+        const currentPromptSyntax = document.getElementById('currentPromptSyntax');
+
+        // セレクトボックスの初期化
+        function initSelect() {
+            loraSelect.innerHTML = '';
+            loraData.forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item.id;
+                opt.textContent = item.name + ` (${item.category})`;
+                loraSelect.appendChild(opt);
+            });
+        }
+
+        // カードグリッドの描画
+        function renderCards(filter = '') {
+            loraCardsGrid.innerHTML = '';
+            const filtered = loraData.filter(item => 
+                item.name.toLowerCase().includes(filter.toLowerCase()) || 
+                item.category.toLowerCase().includes(filter.toLowerCase())
+            );
+
+            if (filtered.length === 0) {
+                loraCardsGrid.innerHTML = `<div class="col-span-2 text-center py-10 text-slate-500">一致するLoRAが見つかりませんでした</div>`;
+                return;
+            }
+
+            filtered.forEach(item => {
+                const card = document.createElement('div');
+                card.className = `bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between hover:border-indigo-500/50 transition cursor-pointer`;
+                card.onclick = () => {
+                    loraSelect.value = item.id;
+                    weightSlider.value = item.recommended;
+                    updateUI();
+                    card.classList.add('ring-2', 'ring-indigo-500');
+                    setTimeout(() => card.classList.remove('ring-2', 'ring-indigo-500'), 400);
+                };
+
+                // 現在スライダーで選ばれている値（このLoRAが選択中ならその値、違えば推奨値）を取得
+                const activeVal = (loraSelect.value === item.id) ? parseFloat(weightSlider.value) : item.recommended;
+
+                card.innerHTML = `
+                    <div>
+                        <div class="flex justify-between items-start mb-2">
+                            <span class="text-xs px-2.5 py-1 rounded-full bg-slate-800 text-indigo-300 font-medium border border-slate-700">${item.category}</span>
+                            <span class="text-xs font-semibold text-emerald-400 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-800/50">適正推奨: ${item.recommended}</span>
+                        </div>
+                        <h3 class="font-bold text-slate-100 text-sm mb-1 break-all">${item.name}</h3>
+                        <p class="text-xs text-slate-400 mb-4 line-clamp-2">${item.desc}</p>
+                    </div>
+                    <div class="flex items-center justify-between pt-3 border-t border-slate-800/80">
+                        <code id="card-syntax-${item.id}" class="text-[11px] text-indigo-300 bg-slate-950 px-2 py-1 rounded border border-slate-800 select-all">&lt;lora:${item.name}:${activeVal.toFixed(2)}&gt;</code>
+                        <button onclick="event.stopPropagation(); copySyntax('${item.name}')" class="text-xs bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white px-2.5 py-1 rounded transition">コピー</button>
+                    </div>
+                `;
+                loraCardsGrid.appendChild(card);
+            });
+        }
+
+        // UIとステータスの更新
+        function updateUI() {
+            const selectedId = loraSelect.value;
+            const currentItem = loraData.find(i => i.id === selectedId);
+            const val = parseFloat(weightSlider.value);
+
+            weightValue.textContent = val.toFixed(2);
+
+            if (!currentItem) return;
+
+            // プロンプト表示部分を現在のスライダー値に連動させる
+            currentPromptSyntax.textContent = `<lora:${currentItem.name}:${val.toFixed(2)}>`;
+
+            // カード一覧側の表示もリアルタイムで更新
+            loraData.forEach(item => {
+                const syntaxEl = document.getElementById(`card-syntax-${item.id}`);
+                if (syntaxEl) {
+                    const cardVal = (selectedId === item.id) ? val : item.recommended;
+                    syntaxEl.textContent = `<lora:${item.name}:${cardVal.toFixed(2)}>`;
+                }
+            });
+
+            const [minRec, maxRec] = currentItem.range;
+
+            if (val === 0) {
+                statusBox.className = "p-4 rounded-xl border bg-slate-900 border-slate-800 transition-all duration-300";
+                statusTitle.className = "font-bold text-slate-400 mb-1";
+                statusTitle.textContent = "LoRAは無効化されています (0.0)";
+                statusDesc.textContent = "このLoRAの効果は適用されません。";
+            } else if (val >= minRec && val <= maxRec) {
+                statusBox.className = "p-4 rounded-xl border bg-emerald-950/30 border-emerald-800/40 transition-all duration-300";
+                statusTitle.className = "font-bold text-emerald-300 mb-1";
+                statusTitle.textContent = "✨ 適正推奨範囲内です";
+                statusDesc.textContent = `作者および標準的な推奨範囲（${minRec} ~ ${maxRec}）内です。最もきれいに効果が現れます。`;
+            } else if (val < minRec) {
+                statusBox.className = "p-4 rounded-xl border bg-amber-950/30 border-amber-800/40 transition-all duration-300";
+                statusTitle.className = "font-bold text-amber-300 mb-1";
+                statusTitle.textContent = "⚠️ 効果がやや弱めです";
+                statusDesc.textContent = `推奨下限（${minRec}）を下回っています。変化が分かりにくい場合は数値を上げてください。`;
+            } else {
+                statusBox.className = "p-4 rounded-xl border bg-rose-950/30 border-rose-800/40 transition-all duration-300";
+                statusTitle.className = "font-bold text-rose-300 mb-1";
+                statusTitle.textContent = "🔥 強め（過学習・破綻注意）です";
+                statusDesc.textContent = `推奨上限（${maxRec}）を超えています。画崩れ、焦げ、人体や背景の破綻が発生しやすくなります。`;
+            }
+        }
+
+        // 現在のプロンプトをコピー
+        function copyCurrentPrompt() {
+            const text = currentPromptSyntax.textContent;
+            executeCopy(text);
+        }
+
+        // 特定カードの文字列をコピー（スライダー連動後の値を使用）
+        function copySyntax(name) {
+            const currentItem = loraData.find(i => i.name === name);
+            const val = (loraSelect.value === currentItem.id) ? parseFloat(weightSlider.value) : currentItem.recommended;
+            const text = `<lora:${name}:${val.toFixed(2)}>`;
+            executeCopy(text);
+        }
+
+        function executeCopy(text) {
+            const dummy = document.createElement('textarea');
+            document.body.appendChild(dummy);
+            dummy.value = text;
+            dummy.select();
+            document.execCommand('copy');
+            document.body.removeChild(dummy);
+
+            const toast = document.getElementById('toast');
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 2000);
+        }
+
+        // イベントリスナー
+        loraSelect.addEventListener('change', () => {
+            const currentItem = loraData.find(i => i.id === loraSelect.value);
+            if (currentItem) {
+                weightSlider.value = currentItem.recommended;
+                updateUI();
+            }
+        });
+
+        weightSlider.addEventListener('input', updateUI);
+
+        searchInput.addEventListener('input', (e) => {
+            renderCards(e.target.value);
+        });
+
+        // 初期化実行
+        window.onload = () => {
+            initSelect();
+            renderCards();
+            updateUI();
+        };
+    </script>
+</body>
+</html>
